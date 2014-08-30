@@ -1,3 +1,8 @@
+Sbt Settings
+resolvers += "sonatype-snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/"
+
+libraryDependencies += "com.typesafe" %% "slick-action" % "0.1-SNAPSHOT"
+
 Preview: Automatic connection management in Slick
 
 Currently, working with JDBC connections aka Slick Sessions is only marginally better than with JDBC itself. In particular people struggle with having to either pass the Session everywhere or create sessions everywhere and with leaking sessions across threads/futures or past the session lifetime. Also, Slick currently doesn't help you with deciding where to run queries and transactions in master-slave replication setups.
