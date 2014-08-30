@@ -20,6 +20,7 @@ We are going to change that for Slick 2.2. This is a preview implementation, whi
   - prevents passing sessions across threads
   - prevents leaking sessions past lifetime
   - prevents transactions over multiple data sources
+  - "unsafe" feature creating side-effects on the jdbc connection
 - optional master/slave support
   - when not in a transaction, automatically use slave for each 
     read, master for each write

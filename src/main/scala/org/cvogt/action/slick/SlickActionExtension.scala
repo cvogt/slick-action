@@ -105,37 +105,37 @@ Not for: ${T}"""
               )
         )
 
-    /** Applies a function to the JDBC connection before and after running the Action.
-        Also runs the action and all enclosed actions in the same JDBC connection
-        and disallows async. We could add another method, that allows async and runs
-        enclosed actions individually, re-applying Connection options to each of them.
-        Also we could have an alternative method, that wraps the enclosed session function
-        in order to allow catching exceptions, triggering rollback etc.
-      */
-    def sameConnectionWithOptions[T,R,I]
-      (action: Action[T,R])
-      (before: java.sql.Connection => I)
-      (after: I => Unit)
-      (implicit ev: T !<: Async, db: ReadWriteSelect[T])
-      = sameConnection(Action[T,R]({
-          context =>
-            val i = before(session(context).get.conn)
-            val res = action._run(context)
-            after(i)
-            res
-        }))
+    /** Helper for unsafe actions to allow partial type-inference */
+    def unsafe[T](implicit ev: T !<: Async, db: ReadWriteSelect[T]) = new unsafe[T]
+    /** Helper for unsafe actions to allow partial type-inference */
+    class unsafe[T](implicit ev: T !<: Async, db: ReadWriteSelect[T]){
+      /** Creates an Action from a function taking a JDBC Connection.
+          A Connection will be kept open for the whole duration.
+          This can be used to perform side-effects on the JDBC connection.
+          The side-effects will persist as lond a the connection is
+          kept open, which you can affect using `sameConnection` or `transaction`.
+          BE WARNED:
+          You need to specify type T correctly as Read, Write and/or Async.
+          Don't pass the Connection across Threads.
+          Don't hold onto the Connection, e.g. in some captured scope.
+        */
+      def JDBC[R]
+        (_run: java.sql.Connection => R)
+        = unsafe[T].slick(session => _run(session.conn))
 
-    /** Creates an Action from a function taking a Session
-        BE WARNED:
-        You need to specify type T correctly as Read or Write.
-        A Session will be kept open during the whole function call.
-        Don't pass the Session across Threads.
-        Don't hold onto the Session, e.g. in some captured scope.
-    */
-    def UnsafeAction[T,R](run: Session => R)(implicit db: ReadWriteSelect[T])
-      = sameConnection[T,R](Action[T,R](
-          context => run(session(context).get)
-        ))
+      /** Creates an Action from a function taking a Slick Session.
+          A Session will be kept open for the whole duration.
+          BE WARNED:
+          You need to specify type T correctly as Read, Write and/or Async.
+          Don't pass the Session across Threads.
+          Don't hold onto the Session, e.g. in some captured scope.
+      */
+      def slick[R]
+        (_run: Session => R)
+        = sameConnection[T,R](Action[T,R](
+            context => _run(session(context).get)
+          ))
+    }
 
     /** Add operations to synchronous actions only.
         Limited to Slick by requiring a ReadWriteSelect. */

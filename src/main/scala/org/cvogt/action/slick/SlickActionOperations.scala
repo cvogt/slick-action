@@ -26,41 +26,41 @@ trait SlickActionOperations[P <: JdbcDriver]{
       = new UpdateInvokerAction[U](simple.queryToUpdateInvoker(q))
 
     implicit class DDLInvokerAction(i: DDLInvoker){
-      def create[O] = UnsafeAction[Write,Unit](i.create(_))
-      def drop[O] = UnsafeAction[Write,Unit](i.drop(_))
+      def create[O] = unsafe[Write].slick(i.create(_))
+      def drop[O] = unsafe[Write].slick(i.drop(_))
     }
     implicit class DeleteInvokerAction(i: DeleteInvoker){
-      def deleteInvoker = i
+      val deleteInvoker = i
       def deleteStatement = i.deleteStatement
-      def delete[O] = UnsafeAction[Write, Int](i.delete(_))
+      def delete[O] = unsafe[Write].slick(i.delete(_))
     }
     implicit class InsertInvokerAction[T](i: InsertInvoker[T]){
-      def insertInvoker = i
+      val insertInvoker = i
       def insertStatement = i.insertStatement
       def forceInsertStatement = i.forceInsertStatement
-      def insert[O](v: T) = UnsafeAction[Write, Int](i.insert(v)(_))
-      def forceInsert[O](v: T) = UnsafeAction[Write, Int](i.forceInsert(v)(_))
-      def insertAll[O](v: T*) = UnsafeAction[Write, Option[Int]](i.insertAll(v: _*)(_))
-      def forceInsertAll[O](v: T*) = UnsafeAction[Write, Option[Int]](i.forceInsertAll(v: _*)(_))
+      def insert[O](v: T) = unsafe[Write].slick(insertInvoker.insert(v)(_))
+      def forceInsert[O](v: T) = unsafe[Write].slick(insertInvoker.forceInsert(v)(_))
+      def insertAll[O](v: T*) = unsafe[Write].slick(insertInvoker.insertAll(v: _*)(_))
+      def forceInsertAll[O](v: T*) = unsafe[Write].slick(insertInvoker.forceInsertAll(v: _*)(_))
     }
     implicit class UpdateInvokerAction[T](i: UpdateInvoker[T]){
-      def updateInvoker = i
+      val updateInvoker = i
       def updateStatement = i.updateStatement
-      def update[O](v: T) = UnsafeAction[Write, Int](i.update(v)(_))
+      def update[O](v: T) = unsafe[Write].slick(i.update(v)(_))
     }
     implicit class QueryInvokerAction[V](i: QueryInvoker[V]){
-      def invoker = i
-      def execute[O] = UnsafeAction[Write, Unit](i.execute(_))
-      def executeRead[O] = UnsafeAction[Read, Unit](i.execute(_))
-      def list[O] = UnsafeAction[Read, List[V]](i.list(_))
-      def first[O] = UnsafeAction[Read, V](i.first(_))
-      def firstOption[O] = UnsafeAction[Read, Option[V]](i.firstOption(_))
-      def foreach[O](f: V => Unit) = UnsafeAction[Read, Unit](i.foreach(f)(_))
+      val invoker = i
+      def execute[O] = unsafe[Write].slick(i.execute(_))
+      def executeRead[O] = unsafe[Read].slick(i.execute(_))
+      def list[O] = unsafe[Read].slick(i.list(_))
+      def first[O] = unsafe[Read].slick(i.first(_))
+      def firstOption[O] = unsafe[Read].slick(i.firstOption(_))
+      def foreach[O](f: V => Unit) = unsafe[Read].slick(i.foreach(f)(_))
       //import scala.collection.generic.CanBuildFrom
-      //def build[To](implicit canBuildFrom: CanBuildFrom[Nothing, V, To], db: DatabaseSelect[AbstractRead]) = UnsafeAction[AbstractRead, To](i.build(_,canBuildFrom))
+      //def build[To](implicit canBuildFrom: CanBuildFrom[Nothing, V, To], db: DatabaseSelect[AbstractRead]) = unsafe[AbstractRead].slick(i.build(_,canBuildFrom))
     }
     implicit class QueryExecutorAction[V](e: QueryExecutor[V]){
-      def run[O](v: V) = UnsafeAction[Read, V](e.run(_))
+      def run[O](v: V) = unsafe[Read].slick(e.run(_))
       def executor = e
     }
   }

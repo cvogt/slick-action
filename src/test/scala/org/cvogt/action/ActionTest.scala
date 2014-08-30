@@ -69,6 +69,32 @@ class ActionTest extends FunSuite with TypeCheckedTripleEquals{
     )
   }
 
+  test("jdbc connection side-effects"){
+    val db = new DatabaseConfig(Database.forURL(
+      "jdbc:h2:mem:action_monad", driver = "org.h2.Driver"
+    ))
+    val a = (for{
+      autoCommit <- unsafe[Read].JDBC(_.getAutoCommit)
+      _ <- unsafe[Read].JDBC(_.setAutoCommit(!autoCommit))
+      newAutoCommit <- unsafe[Read].JDBC(_.getAutoCommit)
+    } yield (autoCommit,newAutoCommit))
+
+    // side-effect does not survive between connections
+    assert(
+      a.run(db) match { case (old,_new) => old === _new }
+    )
+
+    // side-effect survives within a single connection
+    assert(
+      sameConnection(a).run(db) match { case (old,_new) => old !== _new }
+    )
+
+    // side-effect survives within a transaction
+    assert(
+      transaction(a).run(db) match { case (old,_new) => old !== _new }
+    )
+  }
+
   test("test master/slave selection"){
     val master = Database.forURL(
       "jdbc:h2:mem:action_monad_master;DB_CLOSE_DELAY=-1", driver = "org.h2.Driver"
