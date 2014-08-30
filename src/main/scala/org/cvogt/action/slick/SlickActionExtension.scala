@@ -15,7 +15,7 @@ trait Write
 trait Async
 
 /** Slick Action extensions public interface */
-class SlickActionExtension[P <: JdbcDriver] private[slick](val driver: P)
+class SlickActionExtension[P <: JdbcDriver](val driver: P)
   extends SlickActionOperations[P]{
   import driver._
   import driver.simple._
