@@ -13,7 +13,8 @@ object MyBuild extends Build{
         ,"com.typesafe.slick" %% "slick-codegen" % "2.1.0"
         ,"org.scalatest" %% "scalatest" % "2.1.6" % "test"
         ,"org.slf4j" % "slf4j-nop" % "1.6.4"
-        ,"com.h2database" % "h2" % "1.3.170"
+        ,"com.h2database" % "h2" % "1.3.170",
+        "org.scala-lang" % "scala-reflect" % "2.10.4"
       ),
       scalacOptions ++= Seq("-feature", "-deprecation", "-unchecked"),
       scalaVersion := "2.10.4",
