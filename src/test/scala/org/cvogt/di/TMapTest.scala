@@ -46,8 +46,6 @@ class ContextTest extends FunSuite with TypeCheckedTripleEquals{
     def monadic = (_:TMap[Any]) => a
   }
 
-  def Implicit[V:TTKey] = (c: TMap[V]) => c[V]
-
   class Database{
     def query(sql: String) = "query result"
   }
@@ -212,6 +210,8 @@ class ContextTest extends FunSuite with TypeCheckedTripleEquals{
     }
   }
 
+  def Implicit[V:TTKey] = (c: TMap[V]) => c[V]
+  // mimic scala implicits
   test("functions with TMap and monadic composition and inferred types and syntactic sugar"){
     def getPeople
       = for {
@@ -224,6 +224,45 @@ class ContextTest extends FunSuite with TypeCheckedTripleEquals{
     def getPeopleWithCache
       = for {
           c <- Implicit[Cache]
+          people <- getPeople
+        } yield if(c.filled) c.get else people
+
+    assert{
+      val ctx = TMap(database) ++ TMap(cache) ++ TMap(logger)
+      "query result" === getPeopleWithCache(ctx)
+    }
+  }
+
+  def get[V:TTKey] = (c: TMap[V]) => c[V]
+  // Maybe get is a nicer name for dependency injection though
+  test("functions with TMap and monadic composition and inferred types and syntactic sugar and inline style"){
+    def getPeople
+      = for {
+          _   <- get[Logger]  .map(_.log("Fetching person"))
+          res <- get[Database].map(_.query("SELECT * FROM PERSON"))
+        } yield res
+
+    def getPeopleWithCache
+      = for {
+          c <- get[Cache]
+          people <- getPeople
+        } yield if(c.filled) c.get else people
+
+    assert{
+      val ctx = TMap(database) ++ TMap(cache) ++ TMap(logger)
+      "query result" === getPeopleWithCache(ctx)
+    }
+  }
+
+  test("functions with TMap and monadic composition and inferred types and syntactic sugar and inline style and explicit flatMap"){
+    def getPeople
+      = get[Logger].map(_.log("Fetching person")).flatMap(
+          _ => get[Database].map(_.query("SELECT * FROM PERSON"))
+        )
+
+    def getPeopleWithCache
+      = for {
+          c <- get[Cache]
           people <- getPeople
         } yield if(c.filled) c.get else people
 
