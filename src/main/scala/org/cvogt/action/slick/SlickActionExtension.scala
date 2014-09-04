@@ -1,6 +1,6 @@
 package org.cvogt.action
 package slick
-import scala.concurrent.{Future, future, ExecutionContext, Await}
+import scala.concurrent.{Future, ExecutionContext, Await}
 import scala.concurrent.duration._
 import org.cvogt.constraints._
 import scala.annotation.implicitNotFound
@@ -142,7 +142,7 @@ Not for: ${T}"""
     implicit class ActionExtensions[T,R](a: Action[T,R]){
       /** runs a session concurrently */
       def async(implicit ec: ExecutionContext)
-        = Action[T with Async, Future[R]](context => future(a._run(context)))
+        = Action[T with Async, Future[R]](context => Future(a._run(context)))
     }
 
     /** Lifts a Seq of Actions into an Action of a Future that produces a Seq.

@@ -1,7 +1,9 @@
-Sbt Settings
-resolvers += "sonatype-snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/"
+Be warned: This is experimental code. There are no binary or source compatibility guarantees between releases at the moment.
 
-libraryDependencies += "com.typesafe" %% "slick-action" % "0.1-SNAPSHOT"
+Sbt Settings
+
+resolvers += "sonatype-releases" at "https://oss.sonatype.org/content/repositories/releases/"
+libraryDependencies += "com.typesafe" %% "slick-action" % "0.1"
 
 Preview: Automatic connection management in Slick
 
