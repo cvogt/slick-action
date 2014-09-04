@@ -3,7 +3,7 @@ Be warned: This is experimental code. There are no binary or source compatibilit
 Sbt Settings
 
 resolvers += "sonatype-releases" at "https://oss.sonatype.org/content/repositories/releases/"
-libraryDependencies += "com.typesafe" %% "slick-action" % "0.1"
+libraryDependencies += "org.cvogt" %% "slick-action" % "0.1"
 
 Preview: Automatic connection management in Slick
 
