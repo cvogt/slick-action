@@ -5,6 +5,12 @@ import scala.language.existentials
 import scala.annotation.implicitNotFound
 import scala.language.implicitConversions
 
+/*
+fixme: solve TMap thread-safety-problems,
+possibly have a ClassTag based version for 2.10
+and a TypeTag based one for 2.11
+*/
+
 class UnsafeKey
 class TKey extends UnsafeKey{
   type Value
@@ -55,6 +61,20 @@ package object reflect{
   implicit def key[T](implicit typeTag: TypeTag[T]) = new TTKey[T]
   implicit def h2t[T](c: HMap[T]) = c.tMap
   implicit def h2k[T](c: HMap[T]) = c.kMap
+
+  trait TMapDemux2{
+    type Inner
+    def inner: Inner
+  }
+  class TMapDemux[T](val inner: T) extends TMapDemux2{
+    type Inner = T
+  }
+  def TMapped[T:TypeTag] = (tmap: TMap[T]) => tmap[T]
+  class Using[T <: TMapDemux2:TypeTag]{
+    def apply[R](f2: T#Inner => R) = (tmap: TMap[T]) => f2(tmap[T].inner)
+  }
+  def using[T <: TMapDemux2:TypeTag] = new Using[T]
+
   implicit class KeyContextExtensions[T](kc: HMap[T]){
     //def lift[L <: Lifter[T]](l: L) = KMap((l,l.map))
     def tMap = new TMap[T](kc.seq)
@@ -75,7 +95,7 @@ package object reflect{
   }
 
   /** Type-indexed map */
-  class TMap[+T] private[di](seq: Seq[KeyValuePair]) extends HMap[T](seq){
+  class TMap[+T] private[reflect](private[reflect] seq: Seq[KeyValuePair]) extends HMap[T](seq){
     override private[di] def create = new KMap[T](_)
     def add[V](value: V)(implicit key: TTKey[V])
       = new TMap[T with V]( kvp((key,value)) +: seq )
@@ -85,6 +105,10 @@ package object reflect{
         Be aware of this when using subtyping. */
     def apply[V](implicit key: TTKey[V], ev: T <:< V)
       : V = unsafeGet(key).get
+/*
+    def unsafeGetByType[V](implicit key: TTKey[V])
+      : Option[V] = unsafeGet(key)
+*/
     def extract[C[_]] = new {
       def as[V](implicit ev: T <:< C[V], key: TTKey[V], key2: TTKey[C[V]]) = new {
         def using(f: C[V] => V)        = add[V](f(apply[C[V]]))

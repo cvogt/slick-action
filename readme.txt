@@ -1,3 +1,5 @@
+Update: this now also contains code for a type-indexed map TMap, which eases dependency injection and extension methods for monadic function composition, which eases DI using TMap as a context argument.
+
 Be warned: This is experimental code. There are no binary or source compatibility guarantees between releases at the moment.
 
 Sbt Settings

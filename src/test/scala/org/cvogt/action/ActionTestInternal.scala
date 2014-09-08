@@ -1,9 +1,11 @@
-package org.cvogt.action.test
+package org.cvogt.action.slick.test
 import org.scalatest._
 import org.scalautils.TypeCheckedTripleEquals
 import scala.concurrent._
 import scala.concurrent.duration._
 import ExecutionContext.Implicits.global
+import org.cvogt.di.reflect.TMap
+import org.cvogt.monadic.functions._
 
 class ActionTestInternal extends FunSuite with TypeCheckedTripleEquals{
   import org.cvogt.action._
@@ -13,41 +15,40 @@ class ActionTestInternal extends FunSuite with TypeCheckedTripleEquals{
   import slickAction.action._
 
   test("test rw/transaction tracking"){
-    val config = new DatabaseConfig(null)
+    val config = DatabaseConfig(null)
 
-    val writeAction = Action[Write,Int](_ => 5)
-    val readAction = Action[Read,Int](_ => 99)
-
+    val writeAction = SlickAction[Write,Int](_ => 5)
+    val readAction = SlickAction[Read,Int](_ => 99)
 
     val readActionAsync =
-    readAction.async: Action[Read with Async, Future[Int]]
+    readAction.async: Read => Future[Int]
     
     val testTransactionsWithAsync =
-    transaction(readAction): Action[Read, Int]
+    transaction(readAction): SlickAction[Read, Int]
     assertTypeError("transaction(readActionAsync)")
     
     val readSingleConnection =
-    sameConnection(readAction): Action[Read, Int]
+    sameConnection(readAction): SlickAction[Read, Int]
     assertTypeError("sameConnection(readActionAsync)")
 
     val _____ =
-    readAction: Action[Read,Int]
-    val readTransaction = transaction(readAction): Action[Read,Int]
-    val writeTransaction = transaction(writeAction): Action[Write,Int]
+    readAction: SlickAction[Read,Int]
+    val readTransaction = transaction(readAction): SlickAction[Read,Int]
+    val writeTransaction = transaction(writeAction): SlickAction[Write,Int]
 
-    val a: Action[Write with Read, Int] = 
+    val a: SlickAction[Write with Read, Int] = 
       for{
         i <- writeAction
         j <- readAction
       } yield i + j
 
-    assert(104 === a.run(new ActionContext[Write with Read](Seq())))
+    assert(104 === a(null:Write with Read))
 
-    transaction(a): Action[Read with Write,Int]
+    transaction(a): SlickAction[Read with Write,Int]
     
     // preventing read transaction on Write Action
-    intercept[NoSuchElementException]{
-      transaction(a).run(new ActionContext[Write with Read](Seq()))
+    intercept[NullPointerException]{
+      transaction(a).apply(null:Write with Read)
     }
     assertTypeError("a: Action[Read, Int]")
   }

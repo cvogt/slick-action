@@ -1,67 +1,66 @@
 package org.cvogt.action
-import scala.concurrent.{Future, future, ExecutionContext, Await}
-import scala.concurrent.duration._
-import org.cvogt.constraints._
 import scala.language.higherKinds
-
-/**
-Container for passing scoped config through action executions.
-Certain Actions may depend on certain values existing in the ActionContext.
-Be very careful if creating a ActionContext by hand. The phantom type
-T does not provide any type safety at creation time.
-@tparam T phantom type, makes ActionContext applicable to Action[_ >: T,...]
-*/
-class ActionContext[+T] private[action](private[action] val options: Seq[Any]){
-  /** Create a new Config phantom with union of the types */
-  def ++[Q](config: ActionContext[Q]) = new ActionContext[T with Q](options ++ config.options)
-  private[action] def +(options: Any*) = new ActionContext[T](options ++ this.options)
-}
 
 /**
 Abstract type for Actions. Allows separation of execution logic and
 resource usage management logic from composition logic.
-@tparam T ActionContext type
+@tparam T Context type
 @tparam R Result type
-@tparam A tracks if an Action is run synchronously or asynchronously
 */
-final case class Action[T,+R](private[action] _run: ActionContext[T] => R){
-  // we could add variance as -T, but that would allow people to request more
-  // resources than they actually need (e.g. Write, when they only need Read)
-  // so let's not do it for now
-  outer =>
-  def run(config: ActionContext[T]) = _run(new ActionContext(config.options))
+abstract class Action[T,+R] extends Function1[T,R]{
+  type Self[T,+R] <: Action[T,R]
+  protected def create[T,R](run: T => R): Self[T,R]
+  def apply(t: T): R
   def map[Q](f: R => Q)
-    = Action[T,Q](context => f(outer._run(context)))
-  def flatMap[S,Q](f: R => Action[S,Q])
-    = Action[T with S,Q](context => f(outer._run(context))._run(context))
+    = create[T,Q](t => f(apply(t)))
+  def flatMap[S,Q](f: R => Self[S,Q])
+    = create[T with S,Q](t => f(apply(t))(t))
   import scala.util.Try
   /** what about transaction rollbacks? */
   def asTry
-    = Action[T,Try[R]](context => Try(_run(context)))
+    = create[T,Try[R]](t => Try(apply(t)))
 }
 
-object Action{
+trait ActionCompanion{
+  type Self[T,+R] <: Function1[T,R]
+  protected def create[T,R](f: T => R): Self[T,R]
   /** Lifts a Seq of Actions into an Action that produces a Seq */
-  implicit class LiftSeq[T,R](actions: Seq[Action[T,R]]){
-    def sequence = Action[T,Seq[R]](
-      context => actions.map(_._run(context))
-    )
-  }
+  def sequence[T,R](actions: Seq[Self[T,R]]) = create[T,Seq[R]](
+    context => actions.map(_(context))
+  )
   /**
   Wraps a constant value into an Action to allow composition with other Actions.
   Not made implicit for now to force people to think about what they are doing.
   */
-  def const[R](v: => R) = Action[Any,R](_ => v)
+  def const[R](v: => R) = create[Any,R](_ => v)
 }
 
-trait SourceID[+T]
+import scala.concurrent.{Future, ExecutionContext}
+abstract class AsyncAction[T,+R] extends Function1[T,Future[R]]{
+  type Self[T2 <: T,+R] <: AsyncAction[T2,R]
+  protected def create[T2 <: T,R](run: T2 => Future[R]): Self[T2,R]
+  def apply(t: T): Future[R]
+  def ec(t: T): ExecutionContext
+  def map[Q](f: R => Q)
+    = create[T,Q]{c =>
+        apply(c).map(f)(ec(c))
+      }
 
-final class SourceSelector[I[_] <: SourceID[_]](val options: Seq[Any])
-
-final class MultiConfig[T]
-  (val inner: ActionContext[T]){
-  trait IO[+T] extends SourceID[T]
-  val selector = new SourceSelector[IO](inner.options)
-  /** keep this concealed, if you don't want people to execute queries */
-  val config = new ActionContext[IO[T]](Seq())
+  def mapFailure(f: PartialFunction[Throwable, Throwable])
+    = create[T,R]{c =>
+        apply(c).recoverWith(f andThen (Future failed _))(ec(c))
+      }
+/*
+  def mergeFuture[Q](ev: R <:< Future[Q])
+    = new MongoAction[Q]({c =>
+        import c.executionContext
+        _run(c).flatMap(f => f.asInstanceOf[Future[Q]])
+      })
+*/
+  def flatMap[S,Q](f: R => AsyncAction[S,Q])
+    = create[T with S,Q]{c =>
+        apply(c).flatMap(f(_).apply(c))(ec(c))
+      }
 }
+
+

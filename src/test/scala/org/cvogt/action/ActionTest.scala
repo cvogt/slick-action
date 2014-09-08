@@ -4,6 +4,8 @@ import org.scalautils.TypeCheckedTripleEquals
 import scala.concurrent._
 import scala.concurrent.duration._
 import ExecutionContext.Implicits.global
+import org.cvogt.di.reflect._
+import org.cvogt.monadic.functions._
 
 class ActionTest extends FunSuite with TypeCheckedTripleEquals{
   import org.cvogt.action._
@@ -12,7 +14,7 @@ class ActionTest extends FunSuite with TypeCheckedTripleEquals{
   lazy val slickAction = SlickActionExtension(H2Driver)
   import slickAction.action._
 
-  val noDb = new DatabaseConfig(null)
+  val noDb = DatabaseConfig(null)
 
   class Translations(tag: Tag) extends Table[(Option[Int], String)](tag, "translations") {
     def id = column[Int]("id")
@@ -27,7 +29,7 @@ class ActionTest extends FunSuite with TypeCheckedTripleEquals{
     val db = Database.forURL(
       "jdbc:h2:mem:action_monad", driver = "org.h2.Driver"
     )
-    val config = new DatabaseConfig(db)
+    val config = DatabaseConfig(db)
 
     val a = for{
       _ <- translations.ddl.create
@@ -39,38 +41,83 @@ class ActionTest extends FunSuite with TypeCheckedTripleEquals{
     } yield r
     val expected = Seq((Option(6),"test2"))
     assert(
-      expected === sameConnection(a).run(config)
+      expected === sameConnection(a).apply(config)
     )
     assert(
-      expected === transaction(a).run(config)
+      expected === transaction(a).apply(config)
     )
+
     assert{
-      expected === Await.result(transaction(a).async.run(config), 10.seconds)
+      expected === Await.result(transaction(a).async.apply(config), 10.seconds)
     }
     intercept[org.h2.jdbc.JdbcSQLException]{
       // runs queries in individual sessions, where h2 does not keep the db
-      expected === a.run(config)
+      expected === a(config)
     }
   }
 
-  test("test lift seq action"){
-    val action = Seq[Action[Any,Int]](
-      Action.const(5),
-      Action.const(7),
-      Action.const(99)
+  test("non-slick-action-composition"){
+    val res = SlickAction.const(5).direct.flatMap( i =>
+      SlickAction.const(7).map( j => 
+        i+j
+      )
     )
-    assert(Seq(5,7,99) === action.sequence.run(noDb))
-    assert(Seq(5,7,99) === action.sequenceAsync.run(noDb))
+    
+    assert( 12 === res(()) )
+  }
+
+  test("test lift seq action"){
+    val actions = Seq[SlickAction[Any,Int]](
+      SlickAction.const(5),
+      SlickAction.const(7),
+      SlickAction.const(99)
+    )
+    assert(Seq(5,7,99) === SlickAction.sequence(actions)(noDb))
   }
 
   test("asTry"){
     assert(
-      None === Action.const(throw new Exception()).asTry.run(noDb).toOption
+      None === SlickAction.const(throw new Exception()).asTry(noDb).toOption
     )
   }
 
+  test("mixed actions"){
+    val db = DatabaseConfig(Database.forURL(
+      "jdbc:h2:mem:action_monad", driver = "org.h2.Driver"
+    ))
+    val a = for{
+      _ <- new unsafe[Read].JDBC(_.getAutoCommit).tMap.async
+      _ <- ((_:Any) => 5).tMap.async
+      _ <- (_:TMap[Int]) => Future successful 5
+    } yield ()
+
+    a(TMap(db) ++ TMap(123))
+
+    val d = new Extend_Any_Any((_:Any) => 5).flatMap(_ => (_:Int) => 5)
+    d(6)
+
+    trait A
+    trait B
+    // this seems to be a Scalac limitation
+    assertTypeError("""
+      val c = for{
+        a <- (_:Any) => 5
+        s <- (_:B) => a
+      } yield (s)
+    """)
+    //c(new A with B{})
+
+    val b = for{
+      _ <- new unsafe[Read].JDBC(_.getAutoCommit).async
+      _ <- ((_:Read) => 5).async
+      _ <- (_:Read) => Future successful 5
+    } yield ()
+
+    b(db)
+  }
+
   test("jdbc connection side-effects"){
-    val db = new DatabaseConfig(Database.forURL(
+    val db = DatabaseConfig(Database.forURL(
       "jdbc:h2:mem:action_monad", driver = "org.h2.Driver"
     ))
     val a = (for{
@@ -81,17 +128,17 @@ class ActionTest extends FunSuite with TypeCheckedTripleEquals{
 
     // side-effect does not survive between connections
     assert(
-      a.run(db) match { case (old,_new) => old === _new }
+      a(db) match { case (old,_new) => old === _new }
     )
 
     // side-effect survives within a single connection
     assert(
-      sameConnection(a).run(db) match { case (old,_new) => old !== _new }
+      sameConnection(a).apply(db) match { case (old,_new) => old !== _new }
     )
 
     // side-effect survives within a transaction
     assert(
-      transaction(a).run(db) match { case (old,_new) => old !== _new }
+      transaction(a).apply(db) match { case (old,_new) => old !== _new }
     )
   }
 
@@ -104,26 +151,26 @@ class ActionTest extends FunSuite with TypeCheckedTripleEquals{
     )
 
     ;{
-      val config = new DatabaseConfig(master)
+      val config = DatabaseConfig(master)
       (for{
         _ <- translations.ddl.create
         _ <- translations.insert((Option(1),"master"))
-      } yield ()) run config
+      } yield ()) apply config
     }
     ;{
-      val config = new DatabaseConfig(slave)
+      val config = DatabaseConfig(slave)
       (for{
         _ <- translations.ddl.create
         _ <- translations.insert((Option(1),"slave"))
-      } yield ()) run config
+      } yield ()) apply config
     }
 
-    val config = new MasterSlaveConfig(master,slave)
+    val config = MasterSlaveConfig(master,slave)
     assert(
       // lonely reads go against slave
       "slave" === ((for{
         s <- translations.filter(_.id === 1).map(_.textkey).list
-      } yield s) run config).head
+      } yield s) apply config).head
     )
     assert(
       // mixed reads and writes, writes go to master, reads go to slave
@@ -131,14 +178,14 @@ class ActionTest extends FunSuite with TypeCheckedTripleEquals{
         _ <- translations.filter(_.id === 1).delete
         _ <- translations.insert((Option(1),"master"))
         s <- translations.filter(_.id === 1).map(_.textkey).list
-      } yield s) run config).head
+      } yield s) apply config).head
     )
     assert(
       // multiple reads using same connection, all go to slave
       ("slave","slave") === (sameConnection(for{
         t <- translations.filter(_.id === 1).map(_.textkey).first
         s <- translations.filter(_.id === 1).map(_.textkey).first
-      } yield (s,t)) run config)
+      } yield (s,t)) apply config)
     )
     // TODO: the following test should validate where the inserts go
     assert(
@@ -146,63 +193,65 @@ class ActionTest extends FunSuite with TypeCheckedTripleEquals{
       "master" === (sameConnection(for{
         _ <- translations.insert((Option(3),"foo"))
         s <- translations.filter(_.id === 1).map(_.textkey).list
-      } yield s) run config).head
+      } yield s) apply config).head
     )
     assert(
       // mixed reads and writes using transaction, all go to master
       "master" === (transaction(for{
         _ <- translations.insert((Option(4),"foo"))
         s <- translations.filter(_.id === 1).map(_.textkey).list
-      } yield s) run config).head
+      } yield s) apply config).head
     )
   }
 
+  case class DB1(db: Read with Write) extends TMapDemux(db)
+  case class DB2(db: Read with Write) extends TMapDemux(db)
   test("multi db select"){
-    val db1 = new DatabaseConfig(Database.forURL(
+    val db1 = DatabaseConfig(Database.forURL(
       "jdbc:h2:mem:db1;DB_CLOSE_DELAY=-1", driver = "org.h2.Driver"
-    )).demux
-    val db2 = new DatabaseConfig(Database.forURL(
+    ))
+    val db2 = DatabaseConfig(Database.forURL(
       "jdbc:h2:mem:db2;DB_CLOSE_DELAY=-1", driver = "org.h2.Driver"
-    )).demux
+    ))
     ;{
       (for{
         _ <- translations.ddl.create
         _ <- translations.insert((Option(1),"db1"))
-      } yield ()) run db1.inner
+      } yield ()) apply db1
     }
     ;{
       (for{
         _ <- translations.ddl.create
         _ <- translations.insert((Option(1),"db2"))
-      } yield ()) run db2.inner
+      } yield ()) apply db2
     }
 
-    val multi = db1.config ++ db2.config
-    import scala.reflect.ClassTag
-    val a = {
-      val a: Action[db1.IO[Read],List[(Option[Int],String)]] = using(db1.selector)(translations.list)
+    val multi = TMap(DB1(db1)) ++ TMap(DB2(db2))
+    val a = { 
+      val a = (tmap:TMap[DB1]) => translations.list(tmap[DB1].db)
       assert(
         List((Some(1),"db1"))
-        === a.run(multi)
+        === a(multi)
       )
       a
     }
     val b = {
-      val b: Action[db2.IO[Read],List[(Option[Int],String)]] = using(db2.selector)(translations.list)
+      val b = using[DB2].apply(translations.list)
       assert(
         List((Some(1),"db2"))
-        === b.run(multi)
+        === b(multi)
       )
       b
     }
+
     val ab = for{
       a0 <- a
-      a1 <- using(db1.selector)(translations.ddl.drop)
+      a1 <- using[DB1].apply(translations.ddl.drop)
       b0 <- b
     } yield a0 ++ b0
     assert(
       List((Some(1),"db1"),(Some(1),"db2"))
-      === ab.run(multi)
+      === ab(multi)
     )
   }
 }

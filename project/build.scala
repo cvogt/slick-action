@@ -5,6 +5,17 @@ object MyBuild extends Build{
   val repoKind = SettingKey[String]("repo-kind", "Maven repository kind (\"snapshots\" or \"releases\")")
   val scalaVersions = Seq("2.10.4", "2.11.2")
 
+  /*
+  // snippet to do version dependent stuff
+  scalaVersion(
+    CrossVersion.partialVersion(_) match {
+      // if scala 2.11+ is used, add dependency on scala-xml module
+      case Some((2, scalaMajor)) if scalaMajor >= 11 => "a"
+      case _ => "b"
+    }
+  )
+  */
+
   lazy val aRootProject = Project(id = "slick-action", base = file("."),
     settings = Project.defaultSettings ++ Seq(
       name := "Slick Action",
@@ -18,11 +29,13 @@ object MyBuild extends Build{
         ,"com.h2database" % "h2" % "1.3.170"
       ),
       libraryDependencies <+= scalaVersion(
-        "org.scala-lang" % "scala-reflect" % _
+        "org.scala-lang" % "scala-reflect" % _ % "optional"
       ),
       scalacOptions ++= Seq("-feature", "-deprecation", "-unchecked"),
+      testOptions in Test += Tests.Argument(TestFrameworks.ScalaTest, "-oFD"),
+      parallelExecution := false, // <- until TMap thread-safety issues are resolved
       scalaVersion := "2.10.4",
-      version := "0.1",
+      version := "0.2",
       organizationName := "Christopher Vogt",
       organization := "org.cvogt",
       scalacOptions in (Compile, doc) <++= (version,sourceDirectory in Compile,name).map((v,src,n) => Seq(
